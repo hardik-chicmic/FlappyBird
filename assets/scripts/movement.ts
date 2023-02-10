@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Input,Vec3, UITransform, EventTouch, SpriteFrame, Prefab, NodePool, instantiate, randomRange } from 'cc';
+import { _decorator, Component, Node, Input,Vec3, UITransform, EventTouch, SpriteFrame, Prefab, NodePool, instantiate, randomRange, randomRangeInt, Label } from 'cc';
 const { ccclass, property } = _decorator;
 
 @ccclass('movement')
@@ -9,18 +9,16 @@ export class movement extends Component {
     @property
     steps = 30;
 
-    @property
-    hurdle1 = null;
-
-    @property
-    hurdle2 = null;
-
     @property({type: Prefab})
     pipes = null;
 
     pool1 = new NodePool();
-        
-    // As the scene is loaded the obstacles are set up at a particular distance
+
+    flag = false;
+    
+    totScore = 0;
+
+    gameOver = false;
     onLoad(){    
         this.node.on(Input.EventType.MOUSE_DOWN, this.movementUp);
         this.node.on(Input.EventType.TOUCH_END, (event:EventTouch) => {
@@ -28,65 +26,115 @@ export class movement extends Component {
         })
 
         // creating a pool of obstacles
-        
-        for(let i=0;i<4;i++){
+        let hurdleCount = 4;
+        for(let i=0;i<hurdleCount;i++){
+            // Creating obstacle
             let obstacle = instantiate(this.pipes);
-        
+
             // Putting in the pool
             this.pool1.put(obstacle)
-            
-            // Getting from the pool
-            // let obs = this.pool1.get();
-            // let pos = obs.getPosition();
-
-            // pos.x-= 200*(i+1);
-
-            // obs.setPosition(pos);
-
-            // this.onSceneLoad(this.pool1, i+1)
-
-            // Adding to spriteframe
-            // this.node.addChild(obstacle);
+        }
+        
+    }
+    
+    start() {
+        if(!this.gameOver){
+            this.schedule(this.createHurdle, 2);
         }
     }
 
-    onSceneLoad = (pool1, cnt) => {
-        let obs = this.pool1.get();
-        let pos = obs.getPosition();
+    createHurdle(){
+        // Fetching from the pool and assigning the position of obstacles
+        
+        if(this.pool1.size()){        
+            let Obs = this.pool1.get();
+            let pos = Obs.getPosition();
 
-        pos.x-= 200*(cnt+1);
+            let widthParent = this.node.getComponent(UITransform).width;
+            let hurdleWidth = Obs.getComponent(UITransform).width
+        
+            pos.x = randomRangeInt(1, 4) * (widthParent*0.5 + hurdleWidth*0.5)
+            pos.y = randomRangeInt(-10, 10) * 10
 
-        obs.setPosition(pos);
-        pool1.put(obs);
+            Obs.setPosition(pos);
+
+            // Active component ensures whether we can change the properties of node or not
+            Obs.getChildByName("Score").active = true;
+            this.node.addChild(Obs);
+        }
+        this.flag = true;
     }
     
-    
-    
-    // setHurdles = (pool1,deltaTime) => {
-    //     let currentObs = pool1.get();
-        
-    //     let currentPos = currentObs.getPosition();
-    //     // console.log(currentPos);
-    //     console.log(currentPos.x);
-        
-    //     currentPos.x-= 100*(deltaTime);
-    //     // console.log(currentPos.x);
-        
-    //     // currentObs.setPosition(currentPos);
-        
-    //     let widthParent = this.node.getComponent(UITransform).width;
-    //     let hurdle = this.node.getChildByName("pipes")
 
-    //     let hWidth = hurdle.getComponent(UITransform).width
-        
-       
-    //     if(currentPos.x <= -1 * (widthParent*0.5 - hWidth*0.5)){
-    //         pool1.put(currentObs)
-    //     }
-    //     console.log(pool1.size());
-        
-    // }
+    // Iterating the node in which all our hurdles are present and then changing the position
+    setHurdles = (pool1,deltaTime) => {
+        if(this.flag){
+            let arr = this.node.children
+            
+            arr.forEach((element) => {
+                let currentPos = element.getPosition();
+                currentPos.x-= 100*(deltaTime);
+                element.setPosition(currentPos);
+
+
+                // Width of component in which all hurdles are added
+                let widthParent = this.node.getComponent(UITransform).width;
+
+                // Hurdle width or pipe width
+                let hurdleWidth = element.getComponent(UITransform).width
+                
+
+                // Checking if the obstacle is crossing
+                if(currentPos.x <= -1 * (widthParent*0.5 + hurdleWidth*0.5)){
+                    this.pool1.put(element)
+                }
+            })
+        }
+    }
+
+
+    // Checking if the collision occur
+    isCollisionOccur = () => {
+        let hurdles = this.node.children;
+
+        hurdles.forEach((element) => {
+            let pipe1 = element.children;
+            
+            let boundingBoxTop = pipe1[0].getComponent(UITransform).getBoundingBoxToWorld();
+            let boundingBoxDown = pipe1[1].getComponent(UITransform).getBoundingBoxToWorld();
+            let boundingBoxScore = pipe1[2].getComponent(UITransform).getBoundingBoxToWorld();
+            let bird = this.node.parent.getChildByName("Character").getChildByName("birdU")
+            
+            let boundingBox3 = bird.getComponent(UITransform).getBoundingBoxToWorld();
+
+            // Checking if bird intersects upper pipe
+            if(boundingBox3.intersects(boundingBoxTop)){
+                console.log("Collision Up detected");
+            }
+
+            // Checking if the bird intersects lower pipe
+            if(boundingBox3.intersects(boundingBoxDown)){
+                console.log("Collision Down detected");
+            }
+
+            // Checking if the bird intersects score node
+            if(boundingBox3.intersects(boundingBoxScore) && pipe1[2].active){
+                pipe1[2].active = false;
+                this.addScore();
+            }
+        })
+    }
+
+
+    // Updating the score on crossing the obstacle
+    addScore = () => {
+        this.totScore+= 1;
+        let scoreLabel = this.node.parent.getChildByName("ScoreLabel");
+        scoreLabel.getComponent(Label).string = String(this.totScore)
+    }
     
+
+    // For upward movement of bird
     movementUp = () => {
         let screenHeight = this.node.getComponent(UITransform).height
         let screenWidth = this.node.getComponent(UITransform).width
@@ -99,6 +147,8 @@ export class movement extends Component {
         this.flappyBird.setPosition(currentPos.x, currentPos.y); 
     }
 
+
+    // For downward movement of bird
     movementDown = () => {
         let screenHeight = this.node.getComponent(UITransform).height
         let screenWidth = this.node.getComponent(UITransform).width
@@ -115,28 +165,17 @@ export class movement extends Component {
         }        
     }
 
-    start() {
-        
-    }
-
-    
+   
+    // update method will first check if there is any change in the scheduler and then it is called
     update(deltaTime: number) {
-        // let currentPosHurdle1:Vec3 = this.hurdle1.getPosition();
-        // currentPosHurdle1.x-= 100*(deltaTime);
-        // let currentPosHurdle2:Vec3 = this.hurdle2.getPosition();
-        // currentPosHurdle2.x-= 100*(deltaTime);
-
-        // this.hurdle1.setPosition(currentPosHurdle1.x, currentPosHurdle1.y)
-        // this.hurdle2.setPosition(currentPosHurdle2.x, currentPosHurdle2.y)
-
-        // let n = this.node.children.length;
-        // for(let i=0;i<n;i++){
-        //     let currentObs = this.node.children[i];
-        //     let currentPos = currentObs.getPosition();
-        //     currentPos.x-= 100*(deltaTime);
-        //     currentObs.setPosition(currentPos);
-        // }
-        this.setHurdles(this.pool1,deltaTime)
+        // Setting the hurdles
+        if(!this.gameOver){
+            this.setHurdles(this.pool1,deltaTime)
+        }
+        if(this.flag){
+            // Checking for collisions
+            this.isCollisionOccur();
+        }
     }
 }
 
